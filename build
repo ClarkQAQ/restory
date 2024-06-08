@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# 定义平台和架构
+PLATFORMS=("darwin/amd64" "darwin/arm64" "linux/amd64" "linux/arm64" "windows/amd64" "windows/386")
+
+# 定义输出目录
+OUTPUT_DIR="release"
+
+# 创建输出目录
+mkdir -p $OUTPUT_DIR
+
+# 当前文件夹名称
+CURRENT_DIR=$(basename $(pwd))
+
+# 编译 main.go
+for PLATFORM in "${PLATFORMS[@]}"
+do
+    # 拆分操作系统和架构
+    IFS="/" read -r OS ARCH <<< "$PLATFORM"
+    
+    # 设置输出文件名
+    OUTPUT_NAME="$CURRENT_DIR-$OS-$ARCH"
+    if [ "$OS" = "windows" ]; then
+        OUTPUT_NAME+=".exe"
+    fi
+    
+    # 设置环境变量并编译
+    echo "正在编译 $OS/$ARCH..."
+    env GOOS=$OS GOARCH=$ARCH go build -o $OUTPUT_DIR/$OUTPUT_NAME main.go
+    
+    if [ $? -ne 0 ]; then
+        echo "编译 $OS/$ARCH 失败！"
+    else
+        echo "编译 $OS/$ARCH 成功：$OUTPUT_DIR/$OUTPUT_NAME"
+    fi
+done
+
+echo "所有平台编译完成！"
