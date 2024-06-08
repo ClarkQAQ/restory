@@ -19,7 +19,7 @@ do
     IFS="/" read -r OS ARCH <<< "$PLATFORM"
     
     # 设置输出文件名
-    OUTPUT_NAME="$CURRENT_DIR-$OS-$ARCH"
+    OUTPUT_NAME="${CURRENT_DIR}_${OS}_${ARCH}"
     if [ "$OS" = "windows" ]; then
         OUTPUT_NAME+=".exe"
     fi
