@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"uw/ulog"
@@ -49,6 +50,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if runtime.GOOS == "windows" {
+		ulog.GlobalFormat().SetLevel(ulog.GlobalFormat().GetLevel() ^ ulog.LevelColor)
+	}
+
 	outputHistoryFilesPtr := flag.Bool("h", false, "output history files")
 	debugLoggerPtr := flag.Bool("d", false, "debug logger")
 	flag.Parse()
@@ -86,7 +91,6 @@ func main() {
 		}
 
 		historyChunkPaths = append(historyChunkPaths, path)
-
 		return nil
 	}); e != nil {
 		ulog.Fatal("walking %s: %s", historyDirPath, e)
@@ -94,6 +98,8 @@ func main() {
 
 	ulog.Debug("chunk: %d", len(historyChunkPaths))
 	ps, files := ulog.Progress(10, float64(len(historyChunkPaths)), "chunk"), 0
+
+	errorChunkMessage := &strings.Builder{}
 
 	for _, path := range historyChunkPaths {
 		ulog.Debug("checking: %s", path)
@@ -104,15 +110,14 @@ func main() {
 			ulog.Debug("opening: %s", entriesJsonPath)
 			f, e := os.OpenFile(entriesJsonPath, os.O_RDONLY, 0)
 			if e != nil {
-				ulog.Warn("open %s: %s, skipping", entriesJsonPath, e)
-				return nil
+				return fmt.Errorf("open meta %s: %w", entriesJsonPath, e)
 			}
 
 			defer f.Close()
 
 			entrie := &Entrie{}
 			if e := json.NewDecoder(f).Decode(&entrie); e != nil {
-				return fmt.Errorf("unmarshal %s: %w", entriesJsonPath, e)
+				return fmt.Errorf("unmarshal meta %s: %w", entriesJsonPath, e)
 			}
 
 			sort.Sort(entrie.Entries)
@@ -146,17 +151,16 @@ func main() {
 					historyPath := filepath.Join(historyChunkPath, entry.ID)
 					hf, e := os.OpenFile(historyPath, os.O_RDONLY, 0)
 					if e != nil {
-						ulog.Warn("open %s: %s, skipping", historyPath, e)
-						return nil
+						return fmt.Errorf("open chunk history %s: %w", historyPath, e)
 					}
 
 					defer hf.Close()
 
 					if _, e := io.Copy(tf, hf); e != nil {
-						return fmt.Errorf("copy %s to %s: %w", historyPath, targetPath, e)
+						return fmt.Errorf("copy chunk history %s to %s: %w", historyPath, targetPath, e)
 					}
 
-					ulog.Debug("copied %s to %s", historyPath, targetPath)
+					ulog.Debug("copied chunk history %s to %s", historyPath, targetPath)
 					files++
 					return nil
 				}(i, entry, targetOutputPath); e != nil {
@@ -166,10 +170,18 @@ func main() {
 
 			return nil
 		}(path); e != nil {
-			ulog.Fatal("processing %s: %s", path, e)
+			ulog.Error("processing %s: %s", path, e)
+
+			fmt.Fprintf(errorChunkMessage, "[%s]: %s\n", path, e)
 		}
 
 		ps.Append(1, path)
+	}
+
+	if errorChunkMessage.Len() > 0 {
+		ulog.Info("done, saved: %d chunk (%d files) to %s, but have some errors:\n%s",
+			len(historyChunkPaths), files, outputDirPath, errorChunkMessage.String())
+		return
 	}
 
 	ulog.Info("full done, saved: %d chunk (%d files) to %s, bye!",
